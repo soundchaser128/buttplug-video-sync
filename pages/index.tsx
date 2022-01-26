@@ -2,24 +2,32 @@ import type {NextPage} from "next"
 import Head from "next/head"
 import React, {useEffect, useState} from "react"
 import FileDrop from "../components/FileDrop"
-
-async function parseScript(file: File) {
-  const body = new FormData()
-  body.append("file", file)
-  const response = await fetch("/api/parse", {method: "POST", body})
-  return await response.json()
-}
+import HapticCommandToButtplugMessage from "../lib/buttplug"
+import {FunscriptCommand, LoadString} from "../lib/haptic-file"
 
 type Mode = "uploading" | "watching"
 
+interface Commands {
+  commands: FunscriptCommand[]
+  commandTimes: number[]
+}
+
 const Home: NextPage = () => {
-  const [parsedScript, setParsedScript] = useState()
+  const [commands, setCommands] = useState<Commands | null>(null)
   const [videoFile, setVideoFile] = useState<File | null>(null)
   const [mode, setMode] = useState<Mode>("uploading")
 
   const onScriptUpload = async (file: File) => {
-    const parsed = await parseScript(file)
-    setParsedScript(parsed)
+    const text = await file.text()
+    const parsed = LoadString(text)
+    // TODO error handling
+    const commands = parsed!.Commands as FunscriptCommand[]
+    const commandMap =
+      HapticCommandToButtplugMessage.HapticCommandToButtplugMessage(commands)
+    setCommands({
+      commands,
+      commandTimes: Array.from(commandMap.keys()),
+    })
   }
 
   const onVideoUpload = (file: File) => {
@@ -27,10 +35,14 @@ const Home: NextPage = () => {
   }
 
   useEffect(() => {
-    if (parsedScript && videoFile) {
+    if (commands && videoFile) {
       setMode("watching")
     }
-  }, [parsedScript, videoFile])
+  }, [commands, videoFile])
+
+  const onTimeUpdate: React.ReactEventHandler<HTMLVideoElement> = (e) => {
+    const time = Math.floor(e.currentTarget.currentTime * 1000)
+  }
 
   return (
     <div className="grid place-content-center h-screen">
@@ -41,8 +53,8 @@ const Home: NextPage = () => {
 
       {mode === "uploading" && (
         <>
-          <FileDrop onUpload={onScriptUpload} disabled={Boolean(parsedScript)}>
-            {parsedScript ? "Done." : "Drag and drop your Funscript file here."}
+          <FileDrop onUpload={onScriptUpload} disabled={Boolean(commands)}>
+            {commands ? "Done." : "Drag and drop your Funscript file here."}
           </FileDrop>
 
           <FileDrop onUpload={onVideoUpload} disabled={Boolean(videoFile)}>
@@ -53,7 +65,11 @@ const Home: NextPage = () => {
 
       {mode === "watching" && (
         <>
-          <video controls src={URL.createObjectURL(videoFile!)} />
+          <video
+            controls
+            src={URL.createObjectURL(videoFile!)}
+            onTimeUpdate={onTimeUpdate}
+          />
         </>
       )}
     </div>
